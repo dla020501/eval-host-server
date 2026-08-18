@@ -1,0 +1,10 @@
+# 제출 토큰·개인키 — 절대 커밋 금지
+token.txt
+*.pem
+*.key
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
