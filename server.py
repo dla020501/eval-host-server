@@ -61,7 +61,37 @@ def pack(msg: dict) -> bytes:
 
 
 def unpack(data: bytes) -> dict:
-    return msgpack.unpackb(data, object_hook=msgpack_numpy.decode, raw=False)
+    return msgpack.unpackb(data, object_hook=decode_ndarray, raw=False)
+
+
+# 네트워크에서 온 바이트를 msgpack_numpy.decode로 풀면 kind=b'O' 맵이 pickle.loads를 타서
+# 송신자가 임의 코드를 실행시킬 수 있다. 숫자·불리언 dtype·ndim<=2·요소 수 상한만 허용.
+ARRAY_MAX_ELEMS = 1 << 20
+
+
+def decode_ndarray(obj: dict):
+    if b"nd" not in obj:
+        return obj
+    try:
+        if obj.get(b"kind"):  # b'V'(structured)·b'O'(pickle) 거부
+            raise ValueError("structured/object ndarray not allowed")
+        dt = np.dtype(obj[b"type"])
+        if dt.kind not in "biuf":
+            raise ValueError(f"ndarray dtype {dt} not allowed")
+        data = obj[b"data"]
+        if not isinstance(data, (bytes, bytearray)):
+            raise ValueError("ndarray data must be bytes")
+        a = np.frombuffer(data, dt)
+        if a.size > ARRAY_MAX_ELEMS:
+            raise ValueError(f"ndarray too large: {a.size} elements")
+        if obj[b"nd"] is not True:
+            return a[0]
+        shape = tuple(obj[b"shape"])
+        if len(shape) > 3 or any(type(n) is not int or n < 0 for n in shape):
+            raise ValueError(f"ndarray shape {shape} not allowed")
+        return a.reshape(shape)
+    except (KeyError, TypeError, IndexError) as e:
+        raise ValueError(f"bad ndarray: {e}") from None
 
 
 class LazyImages(dict):
