@@ -1,0 +1,100 @@
+"""데모 정책 서버 — 통신 규약만 맞춰 **제로 액션**을 돌려주고, 평가 서버가 보내온 관측을
+파일로 저장한다. 정책 로직은 없다: 프로토콜 연결을 확인하고, 실제로 어떤 관측이 오는지
+눈으로 보기 위한 도구다.
+
+실행:
+    python demo_server.py --port 8000 --token <제출토큰> --save-dir ./received
+
+동작:
+  - 매 에피소드의 **첫 관측**을 `--save-dir`에 저장한다(에피소드마다 하위 폴더):
+      head_l.png / wrist_l.png / wrist_r.png   (실기 해상도 RGB)
+      head_l_depth.png       (16-bit mm 원본)
+      head_l_depth_view.png  (사람이 보기 위한 정규화 컬러 미리보기)
+      obs.json               (sim_time·instruction·state·scan 유무·shape 요약)
+  - 액션은 **전부 0**(제로 커맨드) — 로봇은 리셋 포즈를 유지한다. 채점은 0점이지만,
+    관측이 무엇인지 확인하고 자기 추론 스택을 붙이기 전 배선을 검증하는 용도다.
+  - depth는 시뮬레이터의 **이상화 depth**다(server.decode_depth 경고 참조). 손목엔 depth 없음.
+
+의존성: pip install websockets msgpack msgpack-numpy numpy pillow
+"""
+
+import json
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+from server import BasePolicy, action_groups, cli, decode_depth, serve_policy
+
+
+class DemoPolicy(BasePolicy):
+    """제로 액션을 반환하고 첫 관측을 저장한다."""
+
+    def __init__(self, save_dir: str = "./received"):
+        self.save_dir = Path(save_dir)
+        self.action_dim = 22
+        self.control_hz = 20
+        self.ep = -1
+        self._saved_this_ep = False
+
+    def reset(self, msg: dict) -> None:
+        conf = msg.get("conf") or {}
+        self.action_dim = int(conf.get("action_dim") or 22)
+        self.control_hz = int(conf.get("control_hz") or 20)
+        self.ep += 1
+        self._saved_this_ep = False
+
+    def infer(self, obs: dict) -> np.ndarray:
+        if not self._saved_this_ep:
+            self._save(obs)
+            self._saved_this_ep = True
+        # 제로 커맨드: 모든 자유도 0. action_groups(joint_q=0)면 나머지는 평가 서버가 0으로 채운다.
+        # 청크 길이 1이면 관측→추론이 매 제어틱마다(=20Hz) 일어난다.
+        return np.zeros((1, self.action_dim), np.float32)
+
+    def _save(self, obs: dict) -> None:
+        d = self.save_dir / f"ep{self.ep}"
+        d.mkdir(parents=True, exist_ok=True)
+        images = obs.get("images") or {}
+        for cam in ("head_l", "wrist_l", "wrist_r"):
+            if cam in images:  # LazyImages: 꺼내는 순간 uint8 (H,W,3)로 디코드된다
+                Image.fromarray(images[cam]).save(d / f"{cam}.png")
+        if "head_l_depth" in obs:  # float32 미터 (0=무효). 원본(mm)과 미리보기 둘 다 저장
+            depth_m = decode_depth(obs["head_l_depth"])  # bytes면 디코드, 배열이면 통과
+            mm = np.rint(np.clip(depth_m * 1000.0, 0, 65535)).astype(np.uint16)
+            Image.fromarray(mm, mode="I;16").save(d / "head_l_depth.png")
+            Image.fromarray(_depth_preview(depth_m)).save(d / "head_l_depth_view.png")
+        state = obs.get("state") or {}
+        summary = {
+            "sim_time": obs.get("sim_time"),
+            "instruction": obs.get("instruction"),
+            "images": {c: list(np.asarray(images[c]).shape) for c in images},
+            "state": {k: list(np.asarray(v).shape) for k, v in state.items()}
+            if isinstance(state, dict) else "flat",
+            "has_head_l_depth": "head_l_depth" in obs,
+            "has_scan": "scan" in obs,
+            "scan_len": int(np.asarray(obs["scan"]).size) if "scan" in obs else None,
+        }
+        (d / "obs.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2))
+        print(f"[demo] ep{self.ep} 관측 저장: {d}  {summary}", flush=True)
+
+
+def _depth_preview(depth_m: np.ndarray) -> np.ndarray:
+    """이상화 depth(미터, 0=무효)를 사람이 보기 위한 RGB로. 유효 구간을 정규화해 컬러맵 근사."""
+    valid = depth_m > 0
+    if not valid.any():
+        return np.zeros((*depth_m.shape, 3), np.uint8)
+    lo, hi = np.percentile(depth_m[valid], [2, 98])
+    norm = np.clip((depth_m - lo) / max(hi - lo, 1e-6), 0, 1)
+    # 가까울수록 밝게(반전) + 무효는 검정. 간단한 3채널 그레이맵(추가 의존성 없이).
+    g = (norm * 255).astype(np.uint8)
+    rgb = np.stack([255 - g, 255 - g, 255 - g], -1)  # 가까울수록 흰색
+    rgb[~valid] = 0
+    return rgb
+
+
+if __name__ == "__main__":
+    args = cli()
+    save_dir = getattr(args, "save_dir", None) or "./received"
+    serve_policy(DemoPolicy(save_dir), args.host, args.port, args.token,
+                 args.certfile, args.keyfile)
