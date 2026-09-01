@@ -41,6 +41,6 @@ cat <<EOF
   인증서 지문:   $FP
 
 서버 실행 (지문 등록 후)
-  python random_policy.py --port 8000 --token "\$(cat token.txt)" \\
+  python demo_server.py --port 8000 --token "\$(cat token.txt)" \\
       --certfile $CERT --keyfile $KEY
 EOF
