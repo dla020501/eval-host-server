@@ -19,6 +19,7 @@
 """
 
 import json
+import math
 from pathlib import Path
 
 import numpy as np
@@ -64,6 +65,10 @@ class DemoPolicy(BasePolicy):
             mm = np.rint(np.clip(depth_m * 1000.0, 0, 65535)).astype(np.uint16)
             Image.fromarray(mm, mode="I;16").save(d / "head_l_depth.png")
             Image.fromarray(_depth_preview(depth_m)).save(d / "head_l_depth_view.png")
+        if "scan" in obs:  # LiDAR 병합 스캔 float32[960] 원본 + top-down 미리보기 저장
+            scan = np.asarray(obs["scan"], np.float32)
+            np.save(d / "scan.npy", scan)
+            Image.fromarray(_scan_preview(scan)).save(d / "scan_view.png")
         state = obs.get("state") or {}
         summary = {
             "sim_time": obs.get("sim_time"),
@@ -77,6 +82,39 @@ class DemoPolicy(BasePolicy):
         }
         (d / "obs.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2))
         print(f"[demo] ep{self.ep} 관측 저장: {d}  {summary}", flush=True)
+
+
+def _scan_preview(scan: np.ndarray, size: int = 480, view_m: float = 5.0) -> np.ndarray:
+    """LiDAR 병합 스캔 float32[960]을 top-down 2D 이미지로. 로봇=중앙(위=전방·왼=좌).
+    빈 i의 각도 = -π + i·(2π/960)  (base_link atan2(y,x)), 값 = 거리(m), 20≈무반사.
+    view_m 반경까지만 그린다(근접 장애물 확인용)."""
+    from PIL import ImageDraw
+
+    n = len(scan)
+    img = Image.new("RGB", (size, size), (18, 18, 22))
+    dr = ImageDraw.Draw(img)
+    c = size // 2
+    scale = c / view_m
+    # 거리 링(1m 간격)과 축
+    for r in range(1, int(view_m) + 1):
+        rr = int(r * scale)
+        dr.ellipse([c - rr, c - rr, c + rr, c + rr], outline=(45, 45, 55))
+    dr.line([c, 0, c, size], fill=(45, 45, 55))
+    dr.line([0, c, size, c], fill=(45, 45, 55))
+    # 스캔 점 (유효 반사만)
+    for i in range(n):
+        rng = float(scan[i])
+        if not (0.0 < rng < view_m):   # 무반사(≈20m)·범위 밖은 생략
+            continue
+        ang = -math.pi + i * (2.0 * math.pi / n)   # atan2(y, x)
+        x = rng * math.cos(ang)   # 전방
+        y = rng * math.sin(ang)   # 좌
+        px = int(c - y * scale)   # 좌 -> 이미지 왼쪽
+        py = int(c - x * scale)   # 전방 -> 이미지 위
+        dr.ellipse([px - 2, py - 2, px + 2, py + 2], fill=(120, 220, 160))
+    # 로봇(전방 삼각형)
+    dr.polygon([(c, c - 9), (c - 6, c + 7), (c + 6, c + 7)], fill=(230, 120, 90))
+    return np.asarray(img)
 
 
 def _depth_preview(depth_m: np.ndarray) -> np.ndarray:

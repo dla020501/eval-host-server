@@ -75,8 +75,16 @@ depth가 없는 태스크에는 키 자체가 없습니다.
 `mobile`은 베이스 odom(vx, vy, ωz). 속도(qdot)·목표물 참값 포즈는 **주지 않습니다**(비전 태스크
 성립을 위해).
 
-**④ LiDAR `scan`** — `float32[960]`, 병합 2D 스캔. **LiDAR가 있는 태스크에서만** 실리고,
+**④ LiDAR `scan`** — `float32[960]`, 병합 2D 스캔(거리, 미터). 로봇 몸통(base_link) 기준 **360°**
+를 960빈으로(0.375°/빈) 나눈 값이고, **빈 i의 각도 = -π + i·(2π/960)** (`atan2(y, x)`, x=전방·
+y=좌). 값은 0.05~20 m, **20 m ≈ 무반사**(그 방향에 20 m 안쪽 장애물 없음). 실기 라이다 2기를
+`base_link` 프레임으로 병합한 것과 같은 규약입니다. **LiDAR가 있는 태스크에서만** 실리고,
 없으면 키 자체가 없습니다.
+
+아래는 top-down 시각화입니다(로봇=중앙 주황 삼각형이 전방, 링은 1 m 간격, 초록 점이 반사).
+실제 전달값은 위 규약의 float32 배열입니다.
+
+![scan](./figure/scan_view.png)
 
 **⑤ `instruction`** — 자연어 지시(str). `sim_time`(float)도 함께 옵니다.
 
@@ -143,6 +151,7 @@ class MyPolicy(BasePolicy):
         head  = obs["images"]["head_l"]         # (376,672,3) uint8 — 꺼낼 때 디코드
         wrist = obs["images"]["wrist_r"]        # (240,424,3) uint8
         depth = obs.get("head_l_depth")         # (376,672) float32 미터, 0=무효 (없을 수 있음)
+        scan  = obs.get("scan")                 # float32[960] LiDAR 거리 (없을 수 있음)
         state = obs["state"]                    # {"joint_q":[18], "lift":[1], "mobile":[3]}
         text  = obs["instruction"]
 
@@ -178,7 +187,8 @@ python demo_server.py --port 8000 --token "$(cat token.txt)" --save-dir ./receiv
 동작:
 - 매 에피소드 **첫 관측**을 `--save-dir`에 저장합니다(에피소드별 하위 폴더):
   `head_l.png` · `wrist_l.png` · `wrist_r.png`(RGB), `head_l_depth.png`(16-bit mm 원본) +
-  `head_l_depth_view.png`(미리보기), `obs.json`(sim_time·instruction·state·scan 요약).
+  `head_l_depth_view.png`(미리보기), `scan.npy`(LiDAR 원본 float32[960]) + `scan_view.png`
+  (top-down 미리보기), `obs.json`(sim_time·instruction·state·scan 요약).
 - 액션은 **전부 0**(제로 커맨드) — 로봇은 리셋 포즈를 유지합니다. 채점은 0점이지만, 관측
   확인과 배선 검증에는 충분합니다. 이걸로 파이프라인이 붙는 것을 확인한 뒤 §3처럼 여러분
   모델을 `infer()`에 연결하세요.
