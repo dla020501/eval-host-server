@@ -178,7 +178,8 @@ def fill_action(action, action_dim: int | None = None, chunk_len: int = 1) -> np
 
 class BasePolicy:
     def reset(self, msg: dict) -> None:
-        """에피소드 시작. msg["conf"]에 action_dim / control_hz / chunk_mode 등이 들어온다."""
+        """에피소드 시작. msg["conf"]에 action_dim / control_hz / max_chunk_len(청크 크기 상한)이
+        들어온다 — 실행 방식은 동기 소진 단일(chunk_mode·inference_hz 폐지)."""
 
     def infer(self, obs: dict) -> np.ndarray:
         """obs = {"sim_time": float,
@@ -191,7 +192,8 @@ class BasePolicy:
         고정 — head_l 672×376, 손목 424×240. 크롭/리사이즈 등 전처리는 정책 몫이다).
 
         반환: (T, action_dim) float32 액션 청크. T >= 1.
-        평가 서버 conf의 max_chunk_len을 넘으면 앞에서부터 잘린다.
+        평가 서버 conf의 max_chunk_len을 넘으면 앞에서부터 잘린다. 청크는 control_hz로 동기
+        소진된 뒤에야 다시 관측·추론한다 (50개 청크 = 약 2.5초 blocking, 실시간 아님).
         일부 자유도만 쓰려면 dict나 짧은 벡터를 돌려줘도 된다 — fill_action()이 0을 채운다.
         v2 구조화 액션은 action_groups(joint_q=..., lift=..., mobile=...)로 만들면 된다.
         """
