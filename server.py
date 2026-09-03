@@ -277,7 +277,6 @@ def cli() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--port", type=int, default=8000)
-    p.add_argument("--chunk-len", type=int, default=10, help="한 번에 반환할 액션 청크 길이")
     p.add_argument("--token", default=None,
                    help="홈페이지에서 발급받은 제출 토큰. 주면 접속 인증을 요구한다 (권장).")
     p.add_argument("--certfile", default=None,
