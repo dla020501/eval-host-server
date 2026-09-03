@@ -5,6 +5,12 @@ VLA(Vision-Language-Action) 시뮬레이션 평가에 제출할 **참가자 정�
 
 ---
 
+| 파일 | 역할 |
+|---|---|
+| `server.py` | 정책 서버 골격. `BasePolicy`(인터페이스) + `serve_policy()`(WebSocket 서버) + `cli()`(공통 인자). 직접 실행하면 관측 확인용 `LogPolicy`로 뜹니다 (연결 테스트 절, 연결 테스트) |
+| `demo_server.py` | 연결·관측 확인용 데모 정책 — 액션 0, 에피소드 첫 관측을 `--save-dir`에 저장 (아래 연결 테스트 절) |
+| `figure/` | README 그림 (제출 페이지 캡처 등) |
+
 ## 1. 개요
 
 - 참가자가 이 **정책 서버**를 공인 IP에 띄우고, **평가 서버가 클라이언트로 접속**합니다
@@ -203,6 +209,55 @@ python demo_server.py --port 8000 --token "$(cat token.txt)" --save-dir ./receiv
 ```
 
 ---
+
+### 연결 테스트 2 — `server.py` 직접 실행 (`LogPolicy`: 매 틱 로그·이미지 덮어쓰기)
+
+정책을 붙이기 전에, 평가 서버가 보내는 관측이 제대로 도착하는지부터 확인하세요.
+`server.py`를 **직접 실행**하면 정책 대신 확인용 `LogPolicy`가 뜹니다.
+
+```bash
+python server.py --port 8000 --token "$(cat token.txt)" --save-obs obs_dump
+```
+
+띄운 뒤에는 **기다리면 됩니다.** 연결은 평가 서버 → 여러분 서버 방향이라, 여러분 쪽에서
+어딘가로 접속하는 일은 없습니다. 제출(§6)이 큐에 들어가 차례가 되면 평가 서버가 등록된
+주소로 접속하고, 그때부터 로그가 찍힙니다:
+
+```text
+policy server listening on ws://0.0.0.0:8000
+[Start] Task A-1
+[save] 3개 이미지 -> obs_dump/head_l.jpg obs_dump/wrist_l.jpg obs_dump/wrist_r.jpg (매 틱 덮어씀)
+[obs0] type: 'observation'
+[obs0] sim_time: 0.0
+[obs0] images: {head_l: ndarray(376, 672, 3) uint8, wrist_l: ndarray(240, 424, 3) uint8, wrist_r: ndarray(240, 424, 3) uint8}
+[obs0] state: {joint_q: ndarray(18,) float32, lift: ndarray(1,) float32, mobile: ndarray(3,) float32}
+[obs0] scan: ndarray(960,) float32
+[obs0] instruction: 'pick up the cup'
+[obs] t=0.000 head_l(376, 672, 3) wrist_l(240, 424, 3) wrist_r(240, 424, 3) joint_q[18] lift[1] mobile[3] scan[960] instr='pick up the cup'
+[Done] Task A-1 | full marks (early stop)
+```
+
+| 로그 | 언제 | 내용 |
+|---|---|---|
+| `[Start]` / `[Done]` | 에피소드 경계 | `server_info` (§1) |
+| `[obs0]` | 에피소드 첫 틱에 한 번 | 받은 관측의 **전체 구조** — 키·shape·dtype. 여러분이 가정한 규격과 대조하세요 |
+| `[obs]` | 매 틱 | 한 줄 요약 (시뮬 시간, 캠별 디코드 해상도, state 차원, instruction) |
+| `[save]` | 첫 틱에 한 번 | `--save-obs`를 준 경우 저장 경로 |
+
+**화면 보기** — `--save-obs DIR`을 주면 카메라 관측이 `DIR/head_l.jpg`, `DIR/wrist_l.jpg`,
+`DIR/wrist_r.jpg`로 떨어집니다. 매 틱 덮어쓰므로 이미지 뷰어로 열어 두고 새로고침하면
+실시간으로 볼 수 있습니다.
+
+```bash
+xdg-open obs_dump          # 또는 eog obs_dump/head_l.jpg
+```
+
+받은 JPEG 바이트를 **재인코딩 없이 그대로** 쓰기 때문에 저장 비용이 사실상 0이고, 파일이
+평가 서버가 보낸 원본과 바이트 단위로 같습니다 (무압축 배열로 오면 `.png`로 저장).
+
+`LogPolicy`는 정책이 아닙니다 — 액션으로 **현재 자세 유지**(관측 `state`가 구조화 dict일 때)
+또는 0 벡터를 돌려주므로 로봇은 제자리에 있습니다. 관측 경로가 확인되면 §2 앞부분처럼
+여러분의 `BasePolicy`로 바꿔 띄우세요.
 
 ## 5. 유의사항 (참가 필수 조건)
 

@@ -3,6 +3,9 @@
 BasePolicy를 상속해 infer()만 채우고 serve_policy()로 띄우면 된다.
 평가 서버가 이 서버에 WebSocket 클라이언트로 접속한다 (아웃바운드 연결은 평가 서버 쪽에서만).
 
+관측이 제대로 오는지만 확인하려면 `python server.py`로 직접 띄운다 — 받은 obs를 한 줄씩
+찍는 LogPolicy가 뜬다 (파일 맨 아래).
+
 프로토콜 (msgpack, numpy 배열은 msgpack_numpy ext):
     수신 {"type":"reset", "episode_id","task_id","instruction","conf","server_info"}
                                      -> 송신 {"type":"ready"}
@@ -24,6 +27,7 @@ BasePolicy를 상속해 infer()만 채우고 serve_policy()로 띄우면 된다.
 """
 
 import argparse
+import os
 import secrets
 import ssl
 from io import BytesIO
@@ -279,6 +283,98 @@ def cli() -> argparse.Namespace:
     p.add_argument("--certfile", default=None,
                    help="TLS 인증서(PEM). 주면 wss://로 연다. self-signed면 지문을 홈페이지에 등록.")
     p.add_argument("--keyfile", default=None, help="TLS 개인키(PEM). --certfile과 함께.")
+    p.add_argument("--save-obs", default=None, metavar="DIR",
+                   help="관측 이미지를 이 디렉터리에 캠별 파일로 저장한다 (매 틱 덮어쓰기).")
     p.add_argument("--save-dir", default=None,
                    help="demo_server.py 전용: 받은 관측을 저장할 폴더 (다른 정책은 무시).")
     return p.parse_args()
+
+
+def save_images(images: dict, out_dir: str) -> list[str]:
+    """관측 이미지를 캠별 파일로 저장한다. **디코드 전에 부르는 것이 전제** —
+
+    받은 그대로가 JPEG 바이트면 재인코딩 없이 그대로 쓰므로 비용이 사실상 0이고 파일이
+    평가 서버가 보낸 원본과 바이트 단위로 같다. 무압축 배열로 왔으면 PNG로 저장한다.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    paths = []
+    for cam in images:
+        raw = dict.__getitem__(images, cam)       # LazyImages 디코드를 우회한 원본
+        if isinstance(raw, (bytes, bytearray)):
+            path = os.path.join(out_dir, f"{cam}.jpg")
+            with open(path, "wb") as f:
+                f.write(raw)
+        else:
+            from PIL import Image
+
+            path = os.path.join(out_dir, f"{cam}.png")
+            Image.fromarray(np.asarray(raw, np.uint8)).save(path)
+        paths.append(path)
+    return paths
+
+
+def describe(value) -> str:
+    """관측 값 하나를 짧은 문자열로. 규격과 실제가 다를 수 있으니 타입까지 그대로 보여준다."""
+    if isinstance(value, np.ndarray):
+        return f"ndarray{value.shape} {value.dtype}"
+    if isinstance(value, (bytes, bytearray)):
+        return f"bytes[{len(value)}]"
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{k}: {describe(v)}" for k, v in value.items()) + "}"
+    if isinstance(value, (list, tuple)):
+        return f"{type(value).__name__}[{len(value)}]"
+    return repr(value)
+
+
+class LogPolicy(BasePolicy):
+    """`python server.py`로 직접 띄울 때 쓰는 관측 확인용 정책.
+
+    에피소드 첫 틱은 관측 구조를 통째로 찍고, 이후는 한 줄로 줄여 찍는다. save_dir을 주면
+    이미지를 파일로도 떨군다. state가 규격대로 구조화 dict면 현재 자세를 유지하는 액션을,
+    아니면 0 액션을 돌려준다 — 관측이 제대로 오는지 확인하는 용도지 정책이 아니다.
+    """
+
+    def __init__(self, save_dir: str | None = None):
+        self.save_dir = save_dir
+        self.action_dim = None
+        self.first = True
+
+    def reset(self, msg: dict) -> None:
+        self.action_dim = (msg.get("conf") or {}).get("action_dim")
+        self.first = True
+
+    def infer(self, obs: dict):
+        images, state, scan = obs.get("images"), obs.get("state"), obs.get("scan")
+        if self.save_dir and isinstance(images, dict):   # 디코드 전에 저장해야 원본이 남는다
+            paths = save_images(images, self.save_dir)
+            if self.first:
+                print(f"[save] {len(paths)}개 이미지 -> {' '.join(paths)} (매 틱 덮어씀)",
+                      flush=True)
+
+        if self.first:                 # 첫 틱만 전체 구조를 찍는다 (규격 대조용)
+            self.first = False
+            for key, value in obs.items():
+                print(f"[obs0] {key}: {describe(value)}", flush=True)
+
+        sim_time = obs.get("sim_time")
+        parts = [f"t={sim_time:.3f}" if isinstance(sim_time, float) else f"t={sim_time}"]
+        if isinstance(images, dict):   # 꺼내는 순간 디코드되므로 shape는 디코드 결과다
+            parts += [f"{cam}{np.shape(images[cam])}" for cam in images]
+        if isinstance(state, dict):
+            parts += [f"{key}[{np.size(value)}]" for key, value in state.items()]
+        elif state is not None:
+            parts.append(f"state[{np.size(state)}]")
+        if scan is not None:
+            parts.append(f"scan[{np.size(scan)}]")
+        parts.append(f"instr={obs.get('instruction')!r}")
+        print("[obs] " + " ".join(parts), flush=True)
+
+        if isinstance(state, dict):    # 규격대로 오면 현재 자세를 그대로 타깃으로 (정지)
+            return action_groups(joint_q=state.get("joint_q"), lift=state.get("lift"))
+        return np.zeros((1, self.action_dim or 22), np.float32)
+
+
+if __name__ == "__main__":
+    args = cli()
+    serve_policy(LogPolicy(args.save_obs), args.host, args.port, args.token,
+                 args.certfile, args.keyfile)

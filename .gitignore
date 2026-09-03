@@ -8,3 +8,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# 관측 덤프 (--save-obs)
+obs_dump/
