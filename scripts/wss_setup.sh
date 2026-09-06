@@ -41,6 +41,6 @@ cat <<EOF
   인증서 지문:   $FP
 
 서버 실행 (지문 등록 후)
-  evalhost-demo --port 8000 --token "\$(cat token.txt)" \\
-      --certfile $CERT --keyfile $KEY
+  export EVALHOST_TOKEN=<발급받은 토큰>
+  evalhost-demo --port 8000 --certfile $CERT --keyfile $KEY
 EOF
