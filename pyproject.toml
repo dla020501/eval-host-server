@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eval-host-server"
+version = "0.1.0"
+description = "VLA 시뮬레이션 평가용 참가자 정책 서버 템플릿 (WebSocket + msgpack)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["vla", "robotics", "websocket", "policy-server"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "websockets>=12",
+    "msgpack>=1.0",
+    "msgpack-numpy>=0.4",
+    "numpy>=1.24",
+    "Pillow>=10",
+]
+
+[project.optional-dependencies]
+fast = ["simplejpeg"]
+dev = ["pytest", "ruff"]
+
+[project.urls]
+Homepage = "https://github.com/kairobahq/eval-host-server"
+Issues = "https://github.com/kairobahq/eval-host-server/issues"
+
+[project.scripts]
+evalhost-demo = "evalhost.demo:main"
+evalhost-log = "evalhost.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/evalhost"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# load_my_model()은 참가자가 구현하는 자리다 (README 빠른 시작과 같은 코드).
+"examples/my_policy.py" = ["F821"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

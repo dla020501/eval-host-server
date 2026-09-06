@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # wss(TLS) 준비 자동화: self-signed 인증서를 만들고, 제출 페이지에 등록할 값을 출력합니다.
 #
-#   ./wss_setup.sh <공인 IP 또는 도메인> [출력 디렉토리]
-#   예) ./wss_setup.sh 203.0.113.7
+#   ./scripts/wss_setup.sh <공인 IP 또는 도메인> [출력 디렉토리]
+#   예) ./scripts/wss_setup.sh 203.0.113.7
 #
 # 출력되는 "인증서 지문"을 제출 페이지의 지문 칸에 붙여넣으면, 평가 서버는 그 지문과
 # 일치하는 인증서만 신뢰합니다(pinning) — 중간자가 끼어들면 지문 불일치로 거부됩니다.
@@ -11,7 +11,7 @@
 # ws://는 같은 망의 타인이 제출 토큰을 볼 수 있습니다.
 set -euo pipefail
 
-HOST="${1:?사용법: ./wss_setup.sh <공인 IP 또는 도메인> [출력 디렉토리(기본 .)]}"
+HOST="${1:?사용법: ./scripts/wss_setup.sh <공인 IP 또는 도메인> [출력 디렉토리(기본 .)]}"
 DIR="${2:-.}"
 mkdir -p "$DIR"
 CERT="$DIR/cert.pem"
@@ -41,6 +41,6 @@ cat <<EOF
   인증서 지문:   $FP
 
 서버 실행 (지문 등록 후)
-  python demo_server.py --port 8000 --token "\$(cat token.txt)" \\
+  evalhost-demo --port 8000 --token "\$(cat token.txt)" \\
       --certfile $CERT --keyfile $KEY
 EOF
