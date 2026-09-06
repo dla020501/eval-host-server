@@ -9,5 +9,15 @@ __pycache__/
 .venv/
 venv/
 
-# 관측 덤프 (--save-obs)
+# 빌드 산출물
+dist/
+build/
+*.egg-info/
+
+# 도구 캐시
+.pytest_cache/
+.ruff_cache/
+
+# 관측 덤프 (--save-obs / --save-dir)
 obs_dump/
+received/
