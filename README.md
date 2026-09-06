@@ -227,8 +227,12 @@ Task C는 스캐너를 쥔 오른손이 고정되므로 오른손 그리퍼와 �
   있다. `scripts/wss_setup.sh`가 인증서 생성부터 제출값 출력까지 처리한다.
 
 ```bash
-./scripts/wss_setup.sh 203.0.113.7
+curl -fsSLO https://raw.githubusercontent.com/kairobahq/eval-host-server/v0.1.1/scripts/wss_setup.sh
+bash wss_setup.sh 203.0.113.7
 ```
+
+저장소를 복제해 설치한 경우에는 `./scripts/wss_setup.sh 203.0.113.7`로 실행한다. 스크립트는
+`openssl`이 필요하다.
 
 출력된 인증서 지문을 제출 페이지에 등록하면 평가 서버가 그 지문의 인증서만 신뢰한다.
 인증서를 다시 발급하면 지문이 바뀌므로 제출 페이지도 갱신한다. 정식 인증서는 등록이 필요 없다.
