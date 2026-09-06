@@ -79,3 +79,19 @@ def test_wrong_token_is_rejected_with_401(server):
     with pytest.raises(InvalidStatus) as exc:
         connect(uri, additional_headers={"Authorization": "Bearer wrong"})
     assert exc.value.response.status_code == 401
+
+
+def test_demo_policy_survives_stale_observation_format(tmp_path):
+    """연결 테스트 더미처럼 규격 밖 관측(원시 배열 이미지, 평탄 state)이 와도 액션은 응답한다."""
+    policy = DemoPolicy(str(tmp_path))
+    policy.reset({"conf": {"action_dim": 22, "control_hz": 20}})
+    obs = {
+        "type": "observation",
+        "sim_time": 0.0,
+        "images": {"head_cam": np.zeros((376, 672, 3), np.uint8)},
+        "state": np.zeros(22, np.float32),
+        "instruction": "connectivity check",
+    }
+    act = policy.infer(obs)
+    assert act.shape == (1, 22) and act.dtype == np.float32
+    assert (tmp_path / "ep0" / "obs.json").exists()

@@ -24,7 +24,7 @@ import numpy as np
 from PIL import Image
 
 from evalhost.cli import cli
-from evalhost.images import decode_depth
+from evalhost.images import LazyImages, decode_depth
 from evalhost.policy import BasePolicy
 from evalhost.server import serve_policy
 
@@ -47,19 +47,25 @@ class DemoPolicy(BasePolicy):
         self._saved_this_ep = False
 
     def infer(self, obs: dict) -> np.ndarray:
+        # 저장은 진단용이다. 규격 밖 관측(연결 테스트의 더미 등)으로 저장이 실패해도
+        # 액션 응답은 계속한다 -- 저장 실패가 에피소드 실패가 되면 안 된다.
         if not self._saved_this_ep:
-            self._save(obs)
+            try:
+                self._save(obs)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[demo] ep{self.ep} 관측 저장 실패: {type(exc).__name__}: {exc}", flush=True)
             self._saved_this_ep = True
-        # 모든 자유도 0. 청크 길이 1이면 매 제어틱(20Hz)마다 관측·추론한다.
         return np.zeros((1, self.action_dim), np.float32)
 
     def _save(self, obs: dict) -> None:
         d = self.save_dir / f"ep{self.ep}"
         d.mkdir(parents=True, exist_ok=True)
-        images = obs.get("images") or {}
+        images = obs.get("images")
+        if not isinstance(images, (dict, LazyImages)):
+            images = {}
         for cam in ("head_l", "wrist_l", "wrist_r"):
             if cam in images:  # 꺼내는 순간 uint8 (H,W,3)로 디코드된다
-                Image.fromarray(images[cam]).save(d / f"{cam}.png")
+                Image.fromarray(np.asarray(images[cam])).save(d / f"{cam}.png")
         if "head_l_depth" in obs:  # float32 미터, 0=무효. 원본(mm)과 미리보기를 저장
             depth_m = decode_depth(obs["head_l_depth"])
             mm = np.rint(np.clip(depth_m * 1000.0, 0, 65535)).astype(np.uint16)
@@ -69,13 +75,15 @@ class DemoPolicy(BasePolicy):
             scan = np.asarray(obs["scan"], np.float32)
             np.save(d / "scan.npy", scan)
             Image.fromarray(_scan_preview(scan)).save(d / "scan_view.png")
-        state = obs.get("state") or {}
+        state = obs.get("state")
+        if state is None:
+            state = {}
         summary = {
             "sim_time": obs.get("sim_time"),
             "instruction": obs.get("instruction"),
             "images": {c: list(np.asarray(images[c]).shape) for c in images},
             "state": {k: list(np.asarray(v).shape) for k, v in state.items()}
-            if isinstance(state, dict) else "flat",
+            if isinstance(state, dict) else f"flat{list(np.asarray(state).shape)}",
             "has_head_l_depth": "head_l_depth" in obs,
             "has_scan": "scan" in obs,
             "scan_len": int(np.asarray(obs["scan"]).size) if "scan" in obs else None,

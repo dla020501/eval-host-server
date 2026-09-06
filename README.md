@@ -25,7 +25,7 @@ numpy 배열은 `msgpack_numpy` 확장으로 dtype과 shape를 유지한다.
 ## 설치
 
 ```bash
-pip install git+https://github.com/kairobahq/eval-host-server@v0.1.0
+pip install git+https://github.com/kairobahq/eval-host-server@v0.1.1
 ```
 
 `@` 뒤의 태그가 설치되는 버전이다. 최신 태그와 변경 내역은
