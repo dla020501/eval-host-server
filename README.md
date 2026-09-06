@@ -84,7 +84,8 @@ if __name__ == "__main__":
 ```
 
 ```bash
-python my_policy.py --port 8000 --token "$(cat token.txt)"
+export EVALHOST_TOKEN=<발급받은 토큰>
+python my_policy.py --port 8000
 ```
 
 모델 로드는 `__init__`에서 한 번만 한다. `reset()`은 에피소드마다 호출되므로 여기서 다시
@@ -101,7 +102,8 @@ python my_policy.py --port 8000 --token "$(cat token.txt)"
 틱 같은 파일에 덮어쓴다.
 
 ```bash
-evalhost-log --port 8000 --token "$(cat token.txt)" --save-obs obs_dump
+export EVALHOST_TOKEN=<발급받은 토큰>
+evalhost-log --port 8000 --save-obs obs_dump
 ```
 
 실행 결과는 다음과 같다.
@@ -182,7 +184,7 @@ Task C는 스캐너를 쥔 오른손이 고정되므로 오른손 그리퍼와 �
 | --- | --- | --- |
 | `--host` | `0.0.0.0` | 수신 대기 주소 |
 | `--port` | `8000` | 대기 포트 |
-| `--token` | - | 제출 토큰. 지정하면 접속 인증을 요구한다 |
+| `--token` | `EVALHOST_TOKEN` | 제출 토큰. 지정하거나 환경 변수가 있으면 접속 인증을 요구한다 |
 | `--certfile` | - | TLS 인증서 PEM. 지정하면 `wss://`로 수신 대기한다 |
 | `--keyfile` | - | TLS 개인키 PEM. `--certfile`과 함께 쓴다 |
 | `--save-obs` | - | `evalhost-log` 전용. 관측 이미지를 매 틱 덮어쓸 디렉터리 |
@@ -212,10 +214,11 @@ Task C는 스캐너를 쥔 오른손이 고정되므로 오른손 그리퍼와 �
 
 - 정책 서버는 공인 IP 또는 도메인의 열린 포트에 있어야 한다. 사설 IP와 NAT 뒤 주소는
   평가 서버가 도달하지 못하므로 제출이 실패한다.
-- 제출 페이지에서 발급받은 토큰을 `--token`으로 전달한다. 평가 서버는
+- 제출 페이지에서 발급받은 토큰을 환경 변수 `EVALHOST_TOKEN`으로 전달한다. 평가 서버는
   `Authorization: Bearer <토큰>` 헤더를 전송하고 정책 서버가 이를 검증한다. 토큰이 없으면
-  주소를 아는 누구나 접속해 모델 출력을 얻을 수 있다. 토큰은 `.gitignore`에 등록된
-  `token.txt`에 두고 `--token "$(cat token.txt)"`로 읽는다.
+  주소를 아는 누구나 접속해 모델 출력을 얻을 수 있다. `--token <토큰>`으로도 전달할 수
+  있으나 명령행 인자는 같은 머신의 다른 사용자가 프로세스 목록에서 볼 수 있으므로 공유
+  머신에서는 환경 변수를 쓴다.
 - **정책 서버는 평가가 끝날 때까지 실행 상태를 유지해야 한다.** 제출 후 큐 대기와 여러
   에피소드 평가에 수십 분이 소요된다. 도중에 종료되면 그 평가는 실패로 기록된다.
 - 연결은 에피소드 1회 동안 유지된다. 정책 서버는 `done` 수신과 연결 종료를 모두 에피소드
@@ -231,8 +234,8 @@ Task C는 스캐너를 쥔 오른손이 고정되므로 오른손 그리퍼와 �
 인증서를 다시 발급하면 지문이 바뀌므로 제출 페이지도 갱신한다. 정식 인증서는 등록이 필요 없다.
 
 ```bash
-python my_policy.py --port 8000 --token "$(cat token.txt)" \
-    --certfile cert.pem --keyfile key.pem
+export EVALHOST_TOKEN=<발급받은 토큰>
+python my_policy.py --port 8000 --certfile cert.pem --keyfile key.pem
 ```
 
 ## Q&A와 트러블슈팅
