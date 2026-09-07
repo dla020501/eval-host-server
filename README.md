@@ -1,5 +1,9 @@
 # eval-host-server
 
+> **MILAB 전용 포크** ([dla020501/eval-host-server](https://github.com/dla020501/eval-host-server)). 원본은
+> [kairobahq/eval-host-server](https://github.com/kairobahq/eval-host-server)이며 이 저장소는 MILAB 서버에서 검증한 설정 절차를 [MILAB 서버 설정 가이드](#milab-서버-설정-가이드) 절로
+> 추가한 것이다. 프로토콜과 API는 원본과 같다.
+
 VLA 시뮬레이션 평가에 제출하는 참가자 정책 서버의 최소 구현 템플릿이다.
 
 ## 개요
@@ -29,10 +33,10 @@ pip install git+https://github.com/kairobahq/eval-host-server@v0.1.1
 ```
 
 `@` 뒤의 태그가 설치되는 버전이다. 최신 태그와 변경 내역은
-[Releases](https://github.com/kairobahq/eval-host-server/releases) 페이지에 있다. 템플릿 코드를 직접 열어 수정하려면 저장소를 복제하고 editable로 설치한다.
+[Releases](https://github.com/kairobahq/eval-host-server/releases) 페이지에 있다. MILAB에서는 아래처럼 포크를 복제하고 editable로 설치한다.
 
 ```bash
-git clone https://github.com/kairobahq/eval-host-server.git
+git clone https://github.com/dla020501/eval-host-server.git
 cd eval-host-server
 python -m venv .venv
 source .venv/bin/activate
@@ -46,7 +50,8 @@ conda activate eval-host`로 환경을 만들고 같은 `pip install` 명령을 
 ## 빠른 시작
 
 `evalhost-demo`는 액션을 전부 0으로 응답하고 에피소드마다 첫 관측을 파일로 저장하는 데모
-서버다. 평가 서버와의 연결은 이 명령으로 먼저 테스트한다.
+서버다. 평가 서버와의 연결은 이 명령으로 먼저 테스트한다. MILAB 서버에서 실제로 통과한 순서와
+방화벽 설정은 [MILAB 서버 설정 가이드](#milab-서버-설정-가이드)에 있다.
 
 ```bash
 evalhost-demo --port 8000 --save-dir ./received
@@ -209,6 +214,159 @@ Task C는 스캐너를 쥔 오른손이 고정되므로 오른손 그리퍼와 �
 | `docs/protocol.md` | 프로토콜 레퍼런스. 메시지 필드, 관측·액션 형식, 22차원 레이아웃, 종료 사유, 동작 규칙 |
 | `docs/faq.md` | Q&A와 트러블슈팅 |
 | `tests/` | 프로토콜 검증, 액션 변환, CLI, 서버 스모크 테스트 |
+
+## MILAB 서버 설정 가이드
+
+MILAB 서버에서 정책 서버를 띄우고 제출 페이지 접속 테스트까지 통과한 절차다. 2026-09-07에
+아래 환경에서 확인했다. 다른 서버에서는 [포트 번호 바꾸기](#다른-서버에서-포트-번호-바꾸기)
+절을 따라 같은 순서로 진행한다.
+
+| 항목 | 값 |
+| --- | --- |
+| 호스트 | `milab-3090` (Ubuntu, Linux 5.15) |
+| 공인 IP | `203.~~~.~~~.~~~` (NAT 없이 머신이 직접 보유) |
+| 포트 | `8000` |
+| 방화벽 | `ufw` (초기 상태 `inactive`) |
+| Python | 3.10, `.venv` 가상환경 |
+| 제출 주소 | `ws://203.~~~.~~~.~~~:8000` |
+
+### 검증된 절차
+
+1. 포크를 복제하고 가상환경에 editable로 설치한다.
+
+   ```bash
+   git clone https://github.com/dla020501/eval-host-server.git
+   cd eval-host-server
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -e .
+   ```
+
+2. 제출 페이지에서 발급받은 토큰을 환경 변수로 넣는다. 셸을 새로 열면 다시 넣어야 한다.
+
+   ```bash
+   export EVALHOST_TOKEN=<발급받은 토큰>
+   ```
+
+3. 데모 서버를 띄운다. 아래 한 줄이 뜨면 프로세스는 정상이다. **그 뒤로는 평가 서버가
+   접속해 올 때까지 아무 출력도 없다.** 정책 서버는 접속을 받기만 하므로 멈춘 것이 아니다.
+
+   ```bash
+   evalhost-demo --port 8000 --save-dir ./received
+   ```
+
+   ```text
+   policy server listening on ws://0.0.0.0:8000
+   ```
+
+4. 다른 터미널에서 로컬 도달을 확인한다. 토큰이 걸려 있으므로 `401 Unauthorized`가 돌아오면
+   정상이다. 401은 핸들러 전에 처리되어 서버 터미널에는 로그가 남지 않는다.
+
+   ```bash
+   curl -i http://127.0.0.1:8000
+   ```
+
+   ```text
+   HTTP/1.1 401 Unauthorized
+   Server: Python/3.10 websockets/16.1.1
+
+   unauthorized
+   ```
+
+5. OS 방화벽을 확인하고 포트를 연다. MILAB 서버는 `ufw`가 `inactive`라 실제로 막고 있는
+   규칙은 없었고, `allow`는 나중에 `ufw enable`을 하더라도 8000이 열려 있도록 미리 등록한
+   것이다.
+
+   ```bash
+   sudo ufw status            # Status: inactive
+   sudo ufw allow 8000/tcp
+   ```
+
+6. 제출 페이지에 `ws://203.~~~.~~~.~~~:8000`과 토큰을 등록하고 접속 테스트를 실행한다.
+   성공하면 서버 터미널에 `[Start]` 로그가 찍히고 `received/ep0/`에 관측 파일 여덟 개가
+   생긴다.
+
+7. 접속 테스트가 통과하면 데모 서버를 내리고 같은 포트에서 `my_policy.py`를 띄운다.
+   평가가 끝날 때까지 프로세스가 살아 있어야 하므로 `tmux`나 `nohup`으로 실행한다.
+
+   ```bash
+   tmux new -s policy
+   source .venv/bin/activate
+   export EVALHOST_TOKEN=<발급받은 토큰>
+   python my_policy.py --port 8000
+   # Ctrl+b, d 로 분리. 다시 붙을 때는 tmux attach -t policy
+   ```
+
+### 다른 서버에서 포트 번호 바꾸기
+
+포트는 명령행 `--port`로 정하고 제출 페이지에는 같은 번호를 등록한다. 코드 수정은 없다.
+아래는 포트를 `PORT` 변수로 두고 새 서버에서 처음부터 진행하는 순서다.
+
+1. 포트를 정한다. 1024 이상이고 아직 아무 프로세스도 쓰지 않는 번호를 고른다. 출력이 비어
+   있으면 사용 가능하다.
+
+   ```bash
+   PORT=8000
+   ss -ltn | grep ":$PORT "
+   ```
+
+2. 공인 IP를 확인한다. 두 값이 같으면 머신이 공인 IP를 직접 갖고 있는 것이고, 다르면 NAT
+   뒤에 있어 라우터에서 포트포워딩이 필요하다. 사설 IP(`10.`, `172.16–31.`, `192.168.`)만
+   나오면 평가 서버가 도달하지 못한다.
+
+   ```bash
+   hostname -I          # 머신이 가진 IP
+   curl -s ifconfig.me  # 외부에서 보이는 IP
+   ```
+
+3. OS 방화벽을 연다. `ufw`가 `inactive`면 막는 것이 없지만 규칙은 등록해 둔다. `active`면
+   `allow`가 실제로 필요하다. **`ufw enable`을 새로 하려면 먼저 `sudo ufw allow ssh`를 실행한다.**
+   빼먹으면 SSH 접속이 끊긴다.
+
+   ```bash
+   sudo ufw status
+   sudo ufw allow "$PORT"/tcp
+   ```
+
+   `ufw`가 없는 배포판은 `iptables`나 `firewalld`를 쓴다.
+
+   ```bash
+   # firewalld
+   sudo firewall-cmd --permanent --add-port="$PORT"/tcp && sudo firewall-cmd --reload
+   # iptables
+   sudo iptables -I INPUT -p tcp --dport "$PORT" -j ACCEPT
+   ```
+
+4. 데모 서버를 그 포트로 띄우고 로컬에서 401이 오는지 확인한다.
+
+   ```bash
+   export EVALHOST_TOKEN=<발급받은 토큰>
+   evalhost-demo --port "$PORT" --save-dir ./received
+   # 다른 터미널에서
+   curl -i http://127.0.0.1:"$PORT"
+   ```
+
+5. 외부 도달을 확인한다. 이 머신이 아닌 다른 망(휴대폰 테더링, 집)에서 실행한다. 같은 401이
+   오면 열린 것이고, 타임아웃이면 OS 방화벽, 클라우드 보안 그룹, 기관 방화벽 순으로 확인한다.
+   기관 방화벽은 머신에서 열 수 없으므로 관리자에게 인바운드 개방을 요청한다.
+
+   ```bash
+   curl -i http://<공인IP>:<PORT>
+   ```
+
+6. 제출 페이지에 `ws://<공인IP>:<PORT>`를 등록하고 접속 테스트를 실행한다. 통과하면
+   [검증된 절차](#검증된-절차) 7번과 같이 `my_policy.py --port "$PORT"`로 교체한다.
+
+### 증상별 확인
+
+| 증상 | 확인할 것 |
+| --- | --- |
+| `listening` 줄이 안 뜨고 종료된다 | 포트 충돌. `ss -ltn`으로 같은 포트를 쓰는 프로세스를 찾아 다른 포트를 쓴다 |
+| `listening`은 떴는데 아무 로그가 없다 | 정상. 평가 서버가 접속해야 로그가 생긴다. 제출 페이지에서 접속 테스트를 실행한다 |
+| 로컬 `curl`은 401인데 외부 `curl`은 타임아웃 | 방화벽. `ufw status`, 클라우드 보안 그룹, 기관 방화벽 순으로 본다 |
+| 외부 `curl`도 401인데 접속 테스트가 실패한다 | 토큰 불일치 또는 주소 오타. 제출 페이지의 토큰과 `EVALHOST_TOKEN`, `ws://IP:PORT`를 대조한다 |
+| 셸을 새로 열었더니 접속 테스트가 실패한다 | `EVALHOST_TOKEN`은 셸마다 다시 넣어야 한다. 서버를 띄운 셸에서 `echo $EVALHOST_TOKEN`으로 확인한다 |
+| 터미널을 닫았더니 평가가 실패했다 | 서버 프로세스가 같이 종료됐다. `tmux`나 `nohup`으로 띄운다 |
 
 ## 배포·운영 요구사항
 
